@@ -2,8 +2,8 @@ package bananaphone
 
 import (
 	"bufio"
-  "crypto"
-  _ "crypto/sha1"
+	"crypto"
+	_ "crypto/sha1"
 )
 
 func words(data []byte, atEOF bool) (advance int, token []byte, err error) {

@@ -2,11 +2,11 @@ package bananaphone
 
 import (
 	"bufio"
+	"bytes"
 	"crypto"
 	"io"
 	"io/ioutil"
-  "bytes"
-  "math/rand"
+	"math/rand"
 )
 
 type Model map[uint32][]string
@@ -68,13 +68,13 @@ func NewEncoder(wr io.Writer, spec string, dict string) *Encoder {
 
 func (enc *Encoder) Write(p []byte) (n int, err error) {
 	for _, b := range p {
-    words := enc.model[uint32(b)]
-    if _, err := io.WriteString(enc.wr, words[rand.Intn(len(words))]); err != nil {
-      return 0, err
-    }
+		words := enc.model[uint32(b)]
+		if _, err := io.WriteString(enc.wr, words[rand.Intn(len(words))]); err != nil {
+			return 0, err
+		}
 	}
 
-  return len(p), nil
+	return len(p), nil
 }
 
 func (enc *Encoder) Close() error {
