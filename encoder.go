@@ -4,21 +4,57 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
 )
 
-type Model map[uint32][]string
+func NewEncoder(wr io.Writer, encoder, spec, dict string) io.WriteCloser {
+	switch encoder {
+	case "random":
+		return NewRandomEncoder(wr, spec, dict)
+	case "markov":
+		return NewMarkovEncoder(wr, spec, dict, 1)
+	}
 
-type ModelGen func(p []byte) Model
+	panic("bad encoder")
+}
 
-func randommodel(p []byte, tokenizer bufio.SplitFunc, hfn crypto.Hash, shortest bool) Model {
-	m := make(Model)
-	h := hfn.New()
+type RandomEncoder struct {
+	wr io.Writer
 
-	scan := bufio.NewScanner(bytes.NewReader(p))
-	scan.Split(tokenizer)
+	dict  []byte
+	model map[uint32][]string
+
+	tokenizer bufio.SplitFunc
+	hash      crypto.Hash
+	bits      uint32
+}
+
+func NewRandomEncoder(wr io.Writer, spec string, dictfile string) *RandomEncoder {
+	enc := &RandomEncoder{wr: wr}
+
+	enc.tokenizer, enc.hash, enc.bits = parseencodingspec(spec)
+
+	dicttext, err := ioutil.ReadFile(dictfile)
+	if err != nil {
+		return nil
+	}
+
+	enc.dict = dicttext
+
+	enc.mkmodel()
+
+	return enc
+}
+
+func (re *RandomEncoder) mkmodel() {
+	m := make(map[uint32][]string)
+	h := re.hash.New()
+
+	scan := bufio.NewScanner(bytes.NewReader(re.dict))
+	scan.Split(re.tokenizer)
 
 	for scan.Scan() {
 		h.Reset()
@@ -35,41 +71,16 @@ func randommodel(p []byte, tokenizer bufio.SplitFunc, hfn crypto.Hash, shortest 
 		}
 	}
 
-	return m
+	re.model = m
 }
 
-type Encoder struct {
-	wr io.Writer
-
-	dict  []byte
-	model Model
-
-	tokenizer bufio.SplitFunc
-	hash      crypto.Hash
-	bits      uint32
-}
-
-func NewEncoder(wr io.Writer, spec string, dict string) *Encoder {
-	enc := &Encoder{wr: wr}
-
-	enc.tokenizer, enc.hash, enc.bits = parseencodingspec(spec)
-
-	dicttext, err := ioutil.ReadFile(dict)
-	if err != nil {
-		return nil
-	}
-
-	enc.dict = dicttext
-
-	enc.model = randommodel(enc.dict, enc.tokenizer, enc.hash, false)
-
-	return enc
-}
-
-func (enc *Encoder) Write(p []byte) (n int, err error) {
+func (re *RandomEncoder) Write(p []byte) (n int, err error) {
 	for _, b := range p {
-		words := enc.model[uint32(b)]
-		if _, err := io.WriteString(enc.wr, words[rand.Intn(len(words))]); err != nil {
+		words, ok := re.model[uint32(b)]
+		if !ok {
+			panic("no words for byte " + fmt.Sprintf("%X", b))
+		}
+		if _, err := io.WriteString(re.wr, words[rand.Intn(len(words))]); err != nil {
 			return 0, err
 		}
 	}
@@ -77,10 +88,8 @@ func (enc *Encoder) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func (enc *Encoder) Close() error {
-	//	close(enc.in)
-	//	enc.wg.Wait()
-	if closer, ok := enc.wr.(io.Closer); ok {
+func (re *RandomEncoder) Close() error {
+	if closer, ok := re.wr.(io.Closer); ok {
 		return closer.Close()
 	}
 	return nil
